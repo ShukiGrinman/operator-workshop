@@ -27,11 +27,6 @@ import (
 const hwFinalizer = "finalizer.shuki.hw.okto.io"
 var log = logf.Log.WithName("controller_shukihelloworld")
 
-/**
-* USER ACTION REQUIRED: This is a scaffold file intended for the user to modify with their own Controller
-* business logic.  Delete these comments after modifying this file.*
- */
-
 // Add creates a new ShukiHelloWorld Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager) error {
@@ -75,6 +70,14 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
  }
  // Watch for changes to Route
  err = c.Watch(&source.Kind{Type: &routev1.Route{}}, &handler.EnqueueRequestForOwner{
+	 IsController: true,
+	 OwnerType:    &shukiv1alpha1.ShukiHelloWorld{},
+ })
+ if err != nil {
+	 return err
+ }
+ // Watch for changes to Deployment
+ err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{
 	 IsController: true,
 	 OwnerType:    &shukiv1alpha1.ShukiHelloWorld{},
  })
@@ -206,7 +209,18 @@ func (r *ReconcileShukiHelloWorld) manageDeployment(hw *shukiv1alpha1.ShukiHello
   } else if err != nil {
     reqLogger.Error(err, "Failed to get server deployment.")
     return &reconcile.Result{}, err
-  }
+  } else {
+		serverDeployment, err := r.deploymentForWebServer(hw)
+    if err != nil {
+      reqLogger.Error(err, "error getting server deployment")
+      return &reconcile.Result{}, err
+    }
+    err = r.client.Update(context.TODO(), serverDeployment)
+    if err != nil {
+      reqLogger.Error(err, "Failed to create new Server Deployment.", "Deployment.Namespace", serverDeployment.Namespace, "Deployment.Name", serverDeployment.Name)
+      return &reconcile.Result{}, err
+    }
+	}
   return nil, nil
 }
 
