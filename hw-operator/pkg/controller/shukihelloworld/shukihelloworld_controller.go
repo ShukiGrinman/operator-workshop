@@ -194,15 +194,15 @@ func (r *ReconcileShukiHelloWorld) manageDeployment(hw *shukiv1alpha1.ShukiHello
   deployment := &appsv1.Deployment{}
   err := r.client.Get(context.TODO(), types.NamespacedName{Name: hw.Name, Namespace: hw.Namespace}, deployment)
   if err != nil && errors.IsNotFound(err) {
-    serverDeployment, err := r.deploymentForWebServer(hw)
+    err := r.deploymentForWebServer(hw, deployment)
     if err != nil {
       reqLogger.Error(err, "error getting server deployment")
       return &reconcile.Result{}, err
     }
-    reqLogger.Info("Creating a new server deployment.", "Deployment.Namespace", serverDeployment.Namespace, "Deployment.Name", serverDeployment.Name)
-    err = r.client.Create(context.TODO(), serverDeployment)
+    reqLogger.Info("Creating a new server deployment.", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
+    err = r.client.Create(context.TODO(), deployment)
     if err != nil {
-      reqLogger.Error(err, "Failed to create new Server Deployment.", "Deployment.Namespace", serverDeployment.Namespace, "Deployment.Name", serverDeployment.Name)
+      reqLogger.Error(err, "Failed to create new Server Deployment.", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
       return &reconcile.Result{}, err
     }
     return &reconcile.Result{Requeue: true}, nil
@@ -210,14 +210,14 @@ func (r *ReconcileShukiHelloWorld) manageDeployment(hw *shukiv1alpha1.ShukiHello
     reqLogger.Error(err, "Failed to get server deployment.")
     return &reconcile.Result{}, err
   } else {
-		serverDeployment, err := r.deploymentForWebServer(hw)
+		err := r.deploymentForWebServer(hw, deployment)
     if err != nil {
       reqLogger.Error(err, "error getting server deployment")
       return &reconcile.Result{}, err
     }
-    err = r.client.Update(context.TODO(), serverDeployment)
+    err = r.client.Update(context.TODO(), deployment)
     if err != nil {
-      reqLogger.Error(err, "Failed to create new Server Deployment.", "Deployment.Namespace", serverDeployment.Namespace, "Deployment.Name", serverDeployment.Name)
+      reqLogger.Error(err, "Failed to create new Server Deployment.", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
       return &reconcile.Result{}, err
     }
 	}
@@ -321,56 +321,50 @@ func (r *ReconcileShukiHelloWorld) manageConfigMap(hw *shukiv1alpha1.ShukiHelloW
 }
 
 // Resources creation functions
-func (r *ReconcileShukiHelloWorld) deploymentForWebServer(hw *shukiv1alpha1.ShukiHelloWorld) (*appsv1.Deployment, error) {
+func (r *ReconcileShukiHelloWorld) deploymentForWebServer(hw *shukiv1alpha1.ShukiHelloWorld, deployment *appsv1.Deployment) error {
 var replicas int32
 replicas = 1
 labels := map[string]string{
 	"app": hw.Name,
 }
-dep := &appsv1.Deployment{
+deployment.ObjectMeta.Name = hw.Name
+deployment.ObjectMeta.Namespace = hw.Namespace
+deployment.ObjectMeta.Labels = labels
+deployment.Spec.Replicas = &replicas
+deployment.Spec.Selector = &metav1.LabelSelector{
+	MatchLabels: map[string]string{"app": hw.Name},
+}
+deployment.Spec.Template = corev1.PodTemplateSpec{
 	ObjectMeta: metav1.ObjectMeta{
-		Name:      hw.Name,
-		Namespace: hw.Namespace,
-		Labels:    labels,
+		Name:   hw.Name,
+		Labels: labels,
 	},
-	Spec: appsv1.DeploymentSpec{
-		Replicas: &replicas,
-		Selector: &metav1.LabelSelector{
-			MatchLabels: map[string]string{"app": hw.Name},
-		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:   hw.Name,
-				Labels: labels,
-			},
-			Spec: corev1.PodSpec{
-				Containers: []corev1.Container{
+	Spec: corev1.PodSpec{
+		Containers: []corev1.Container{
+			{
+				Name:            hw.Name,
+				Image:           "docker.io/dimssss/nginx-for-ocp:0.1",
+				ImagePullPolicy: corev1.PullAlways,
+				Ports: []corev1.ContainerPort{
 					{
-						Name:            hw.Name,
-						Image:           "docker.io/dimssss/nginx-for-ocp:0.1",
-						ImagePullPolicy: corev1.PullAlways,
-						Ports: []corev1.ContainerPort{
-							{
-								ContainerPort: 8080,
-							},
-						},
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								Name:      "website",
-								MountPath: "/opt/app-root/src",
-							},
-						},
+						ContainerPort: 8080,
 					},
 				},
-				Volumes: []corev1.Volume{
+				VolumeMounts: []corev1.VolumeMount{
 					{
-						Name: "website",
-						VolumeSource: corev1.VolumeSource{
-							ConfigMap: &corev1.ConfigMapVolumeSource{
-								LocalObjectReference: corev1.LocalObjectReference{
-									Name: hw.Name,
-								},
-							},
+						Name:      "website",
+						MountPath: "/opt/app-root/src",
+					},
+				},
+			},
+		},
+		Volumes: []corev1.Volume{
+			{
+				Name: "website",
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: hw.Name,
 						},
 					},
 				},
@@ -378,11 +372,11 @@ dep := &appsv1.Deployment{
 		},
 	},
 }
-if err := controllerutil.SetControllerReference(hw, dep, r.scheme); err != nil {
+if err := controllerutil.SetControllerReference(hw, deployment, r.scheme); err != nil {
 	log.Error(err, "Error set controller reference for server deployment")
-	return nil, err
+	return err
 }
-return dep, nil
+return nil
 }
 
 func (r *ReconcileShukiHelloWorld) serviceForWebServer(hw *shukiv1alpha1.ShukiHelloWorld, service *corev1.Service) error {
