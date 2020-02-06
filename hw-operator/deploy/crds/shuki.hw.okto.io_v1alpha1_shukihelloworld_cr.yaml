@@ -1,0 +1,6 @@
+apiVersion: shuki.hw.okto.io/v1alpha1
+kind: ShukiHelloWorld
+metadata:
+  name: example-shukihelloworld
+spec:
+  message: "I am the cluster master"
